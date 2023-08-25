@@ -1,6 +1,7 @@
 import os
 import sys
 import warnings
+import json
 
 from pathlib import PurePath, Path
 from typing import Dict, List, Optional
@@ -112,7 +113,6 @@ class Hashing:
         myhash = myencoder.encode_image(image_array=<numpy array of image>)
         ```
         """
-        print("?????????????????")
         try:
             if image_file and os.path.exists(image_file):
                 image_file = Path(image_file)
@@ -132,7 +132,7 @@ class Hashing:
 
         return self._hash_func(image_pp) if isinstance(image_pp, np.ndarray) else None
 
-    def encode_images(self, image_dir=None, recursive: bool = False, num_enc_workers: int = cpu_count()):
+    def encode_images(self, image_paths:list=None, image_dir=None, recursive: bool = False, num_enc_workers: int = cpu_count()):
         """
         Generate hashes for all images in a given directory of images.
 
@@ -152,26 +152,19 @@ class Hashing:
         mapping = myencoder.encode_images('path/to/directory')
         ```
         """
-        print(">>>>>>>")
-        if not os.path.isdir(image_dir):
-            raise ValueError('Please provide a valid directory path!')
-
-        if image_dir.endswith(".hds"):
-            with open(image_dir, "r") as input_file:
-                json_paths = (_.strip() for _ in input_file.readlines())
-            for json_path in json_paths
-            
+        if image_paths:
+            files = image_paths
         else:
-            files = generate_files(image_dir, recursive)
-        
-        # TODO Loading Data
-        print("----------------------------")
-        print(files)
+            if not os.path.isdir(image_dir):
+                raise ValueError('Please provide a valid directory path!')
+            files = generate_files(image_dir, recursive) 
 
         logger.info(f'Start: Calculating hashes...')
 
         hashes = parallelise(function=self.encode_image, data=files, verbose=self.verbose, num_workers=num_enc_workers)
-        hash_initial_dict = dict(zip(generate_relative_names(image_dir, files), hashes))
+        hash_initial_dict = dict(zip(generate_relative_names("/", files), hashes)) if image_paths else dict(zip(generate_relative_names(image_dir, files), hashes))
+        # hash_initial_dict = dict(zip(generate_relative_names(image_dir, files), hashes))
+        
         hash_dict = {
             k: v for k, v in hash_initial_dict.items() if v
         }  # To ignore None (returned if some probelm with image file)

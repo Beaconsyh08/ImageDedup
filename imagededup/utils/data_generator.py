@@ -12,14 +12,16 @@ from imagededup.utils.general_utils import generate_files
 class ImgDataset(Dataset):
     def __init__(
         self,
-        image_dir: PurePath,
         basenet_preprocess: Callable[[np.array], torch.tensor],
         recursive: Optional[bool],
-    ) -> None:
+        image_paths: list = None,
+        image_dir: PurePath=None
+        ) -> None:
         self.image_dir = image_dir
+        self.image_paths = image_paths
         self.basenet_preprocess = basenet_preprocess
         self.recursive = recursive
-        self.image_files = sorted(
+        self.image_files = sorted(self.image_paths) if self.image_paths else sorted(
             generate_files(self.image_dir, self.recursive)
         )  # ignore hidden files
 
@@ -50,13 +52,16 @@ def _collate_fn(batch: List[Dict]) -> Tuple[torch.tensor, str, str]:
 
 
 def img_dataloader(
-    image_dir: PurePath,
+    image_paths: list,
     batch_size: int,
     basenet_preprocess: Callable[[np.array], torch.tensor],
     recursive: Optional[bool],
-    num_workers: int
+    num_workers: int,
+    image_dir: PurePath = None,
 ) -> DataLoader:
     img_dataset = ImgDataset(
+        image_paths=image_paths, basenet_preprocess=basenet_preprocess, recursive=recursive
+    )if image_paths else ImgDataset(
         image_dir=image_dir, basenet_preprocess=basenet_preprocess, recursive=recursive
     )
     return DataLoader(
