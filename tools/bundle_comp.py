@@ -2,7 +2,7 @@ from tqdm import tqdm
 import json
 
 def gen_clip_id(carid, ts):
-    """clip分10s一段，按自然时间分隔
+    """
     [[0, 9], [10, 19], [20, 29], [30, 39], [40, 49], [50, 59]]
     """
     ts = str(ts)[:10]

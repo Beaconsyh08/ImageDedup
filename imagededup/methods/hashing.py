@@ -126,7 +126,8 @@ class Hashing:
                     image=image_array, target_size=self.target_size, grayscale=True
                 )
             else:
-                raise ValueError
+                print(image_file)
+                return None
         except (ValueError, TypeError):
             raise ValueError('Please provide either image file path or image array!')
 

@@ -24,6 +24,7 @@ def _plot_images(
     image_list: List,
     scores: bool = False,
     outfile: str = None,
+    paths_dict: dict = None
 ) -> None:
     """
     Plotting function for plot_duplicates() defined below.
@@ -45,7 +46,7 @@ def _plot_images(
         gs[0, 1:3]
     )  # Always plot the original image in the middle of top row
     ax.imshow(Image.open(image_dir / orig))
-    ax.set_title('Original Image: {}'.format(orig))
+    ax.set_title('Original Image: {}'.format(paths_dict[orig]))
     ax.axis('off')
 
     for i in range(0, n_ims):
@@ -55,18 +56,20 @@ def _plot_images(
         ax = plt.subplot(gs[row_num, col_num])
         if scores:
             ax.imshow(Image.open(image_dir / image_list[i][0]))
-            val = _formatter(image_list[i][1])
-            title = ' '.join([image_list[i][0], f'({val})'])
+            # val = _formatter(image_list[i][1])
+            # title = ' '.join([image_list[i][0], f'({val})'])
+            title = paths_dict[image_list[i][0]]
         else:
             ax.imshow(Image.open(image_dir / image_list[i]))
-            title = image_list[i]
+            # title = image_list[i]
+            title = paths_dict[image_list[i]]
 
         ax.set_title(title, fontsize=6)
         ax.axis('off')
     gs.tight_layout(fig)
 
     if outfile:
-        plt.savefig(outfile)
+        plt.savefig(outfile, dpi=300)
 
     plt.show()
     plt.close()
@@ -97,6 +100,7 @@ def plot_duplicates(
     duplicate_map: Dict,
     filename: str,
     outfile: str = None,
+    paths_dict: dict = None
 ) -> None:
     """
     Given filename for an image, plot duplicates along with the original image using the duplicate map obtained using
@@ -131,6 +135,7 @@ def plot_duplicates(
             image_list=retrieved,
             scores=True,
             outfile=outfile,
+            paths_dict=paths_dict
         )
     else:
         _plot_images(
@@ -139,4 +144,5 @@ def plot_duplicates(
             image_list=retrieved,
             scores=False,
             outfile=outfile,
+            paths_dict=paths_dict
         )

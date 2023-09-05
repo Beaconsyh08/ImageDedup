@@ -4,9 +4,12 @@ import os
 import json
 from imagededup.utils import CustomModel
 from imagededup.utils.models import ViT, MobilenetV3, EfficientNet
+from imagededup.utils import plot_duplicates
 from pathlib import Path
 import time
-
+from multiprocessing.pool import ThreadPool
+import pickle
+import itertools
 
 def initialization(method: str):
     if method == "PHash":
@@ -29,101 +32,174 @@ def initialization(method: str):
     
     return encoder
 
-def process(encoder, method: str, image_paths: str):
-    # Generate encodings for all images in an image directory
-    encodings = encoder.encode_images(image_paths=image_paths)
-    print(encodings)
-    
-    # if method.endswith("Hash"):
-    #     duplicates = encoder.find_duplicates(encoding_map=encodings, max_distance_threshold=0)
-    # else:
-    #     duplicates = encoder.find_duplicates(encoding_map=encodings, min_similarity_threshold=0.99)
+def save_to_pickle(save_path, pickle_obj):
+    with open(save_path, "wb") as pickle_file: 
+        pickle.dump(pickle_obj, pickle_file)
+    print("Pickle Saved: %s" % save_path)    
         
-    # duplicates = {key: value for key, value in duplicates.items() if len(value) > 0}
-    # print("duplicateds", len(duplicates))
-    # # print(duplicates)
+def load_from_pickle(pickle_path):
+    with open(pickle_path, "rb") as pickle_file:
+        pickle_obj = pickle.load(pickle_file)
+    return pickle_obj
 
-    # if method.endswith("Hash"):
-    #     duplicates_to_remove = encoder.find_duplicates_to_remove(encoding_map=encodings, max_distance_threshold=0)
-    # else:
-    #     duplicates_to_remove = encoder.find_duplicates_to_remove(encoding_map=encodings, min_similarity_threshold=0.99)
+def find_duplicates(encoder, method: str, encodings: dict, max_distance_threshold=5, min_similarity_threshold=0.99) -> dict:
+    if method.endswith("Hash"):
+        duplicates = encoder.find_duplicates(encoding_map=encodings, max_distance_threshold=max_distance_threshold)
+    else:   
+        duplicates = encoder.find_duplicates(encoding_map=encodings, min_similarity_threshold=min_similarity_threshold)
         
+    return duplicates
+
+def find_duplicates_to_remove(encoder, method: str, encodings: dict, max_distance_threshold=5, min_similarity_threshold=0.99) -> list:
+    if method.endswith("Hash"):
+        duplicates_to_remove = encoder.find_duplicates_to_remove(encoding_map=encodings, max_distance_threshold=max_distance_threshold)
+    else:
+        duplicates_to_remove = encoder.find_duplicates_to_remove(encoding_map=encodings, min_similarity_threshold=min_similarity_threshold)
+        
+    return duplicates_to_remove
+
+def find_duplicates_to_remove_dup():
+    pass
+
+def plot(duplicates: dict, output_root: str):
+    # plot duplicates obtained for a given file using the duplicates dictionary
+    for key in tqdm(duplicates.keys()):
+        plot_duplicates(image_dir=image_root,
+                        duplicate_map=duplicates,
+                        filename=key,
+                        outfile="%s/%s" % (output_root, key))
+        
+
+def load_jsons(json_paths:list, viewpoints:list):
+    res_dict = {key: [] for key in viewpoints}
+    def worker(_):
+        cam_objs = None
+        with open(_) as input_json:
+            try:
+                json_obj = json.load(input_json)
+                cam_objs = json_obj["camera"]
+                
+            except json.decoder.JSONDecodeError:
+                print(input_json)
+            
+            if cam_objs:
+                for cam_obj in cam_objs:
+                    if cam_obj["name"] in viewpoints:
+                        res_dict[cam_obj["name"]] += [Path("/" + cam_obj["oss_path"])]
+                    
+    with ThreadPool(processes = 40) as pool:
+        list(tqdm(pool.imap(worker, json_paths), total=len(json_paths), desc='JSON Loading'))
+        pool.terminate()
+        
+    return res_dict
+
+
+def combine_dict_keys(dict1, dict2):
+    result_dict = {}
+    # Loop through the keys in the dictionaries
+    for key in dict1.keys():
+        if key in dict2:
+            # Concatenate the lists and store the result in the result_dict
+            result_dict[key] = dict1[key] + dict2[key]
+            
+    return result_dict
+
+def process(image_paths: list, save_root: str, method: str):
+    start_time = time.time()
+    
+    # Generate encodings for all images in an image directory
+    encoder = initialization(method=method)
+    encodings = encoder.encode_images(image_paths=image_paths)
+    save_to_pickle(save_path="%s/encodings.pkl" % save_root, pickle_obj=encodings)
+    
+    duplicates = find_duplicates(encoder=encoder, method=method, encodings=encodings)
+    save_to_pickle(save_path="%s/duplicates.pkl" % save_root, pickle_obj=duplicates)
+    
     # print("to_remove", len(duplicates_to_remove))
     # duplicates_to_remove = [Path("/" + _) for _ in duplicates_to_remove]
     # left = list(set(image_paths) - set(duplicates_to_remove))
-    # print(set(image_paths))
-    # print(set(duplicates_to_remove))
-    # print("left", len(left), [_ for _ in left])
+    # print("left", len(left))
+    
+    # with open(res_dir, "a") as output_file:
+    #     for enc in encodings.keys():
+    #         output_file.writelines("%s#/%s#%s" % (carids[i], enc, list(encodings[enc])) + "\n")
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
 
+    print(f"Elapsed time: {elapsed_time} seconds")
+    
+    
+def process_from_mid(save_root: str, method: str):
+    start_time = time.time()
+    
+    # Generate encodings for all images in an image directory
+    encoder = initialization(method=method)
+    
+    encodings = load_from_pickle("%s/encodings.pkl" % save_root)
+    encodings_new = dict()
+    for i,(k,v) in tqdm(enumerate(encodings.items())):
+        encodings_new[str(i)] = v
+    encodings_new = dict(itertools.islice(encodings_new.items(), 400000))
+    duplicates = find_duplicates_to_remove(encoder=encoder, method=method, encodings=encodings_new)
+    save_to_pickle(save_path="%s/duplicates_to_rm.pkl" % save_root, pickle_obj=duplicates)
+    
+    # print("to_remove", len(duplicates_to_remove))
+    # duplicates_to_remove = [Path("/" + _) for _ in duplicates_to_remove]
+    # left = list(set(image_paths) - set(duplicates_to_remove))
+    # print("left", len(left))
+    
+    # with open(res_dir, "a") as output_file:
+    #     for enc in encodings.keys():
+    #         output_file.writelines("%s#/%s#%s" % (carids[i], enc, list(encodings[enc])) + "\n")
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
 
-    # # plot duplicates obtained for a given file using the duplicates dictionary
-    # from imagededup.utils import plot_duplicates
-    # for key in tqdm(duplicates.keys()):
-    #     plot_duplicates(image_dir=image_root,
-    #                     duplicate_map=duplicates,
-    #                     filename=key,
-    #                     outfile="%s/%s" % (output_root, key))
+    print(f"Elapsed time: {elapsed_time} seconds")
     
     
 if __name__ == "__main__":
     # image_root = "/mnt/ve_share/songyuhao/generation/data/train/diffusions/5000/imgs"
     # image_root = "/mnt/ve_share/songyuhao/generation/data/exp"
     # image_root = "/mnt/ve_share/songyuhao/generation/data/icu30/bundle_and_clip_info/out_sampled_10f.txt"
-    image_root = "/mnt/ve_share/songyuhao/generation/data/icu30/bundle_and_clip_info/exp_10.txt"
-    # image_root = "/mnt/ve_share/songyuhao/generation/data/icu30/bundle_and_clip_info/out_sampled_10f.txt"
-    # output_root = "/mnt/ve_share/songyuhao/generation/data/result/dedup/exp/"
-    # os.makedirs(output_root, exist_ok=True)
+    # image_root = "/mnt/ve_share/songyuhao/generation/data/icu30/bundle_and_clip_info/icu30_demo_0825.txt"
+    image_root = "/mnt/ve_share/songyuhao/generation/data/icu30/bundle_and_clip_info/clip_1.txt"
+    # image_root = "/mnt/ve_share/songyuhao/generation/data/icu30/bundle_and_clip_info/1m.txt"
+    output_root = "/mnt/ve_share/songyuhao/generation/data/result/dedup/clip_p5_total"
+    os.makedirs(output_root, exist_ok=True)
 
     # ["PHash", "AHash", "DHash", "WHash", "ViT", "MobilenetV3", "EfficientNet"]
-    method = "EfficientNet"
+    method = "PHash"
     viewpoints = ["front_middle_camera"]
-    sampled_size = 10
-    res_dir = "/mnt/ve_share/songyuhao/generation/data/icu30/%s_%d.txt" % (method, sampled_size)
+    sampled_size = 100
+    load_all = True
+    res_txt = "/mnt/ve_share/songyuhao/generation/data/icu30/%s_%d.txt" % (method, sampled_size)
     
-
+    # =========================================================================================
     dict_paths = {key: [] for key in viewpoints}
     carids = []
     if image_root.endswith(".hds") or image_root.endswith(".txt"):
         print("Loading")
         with open(image_root, "r") as input_file:
             inputs = input_file.readlines()
-            for json_path in inputs:
-                if json_path not in carids:
-                    carids.append(json_path.strip().split(",")[0].split("_")[0])
-            json_paths = [_.strip().split(",")[-1] if _.startswith("HP") else _.strip() for _ in inputs]
-            json_paths = [_ if _.startswith("/") else "/" + _ for _ in json_paths]
-
-        # print(json_paths[:10])
+            
+        json_paths = ["/" + _.strip().split(",")[-1] for _ in inputs]
+        # json_paths = json_paths[:200000]
         print("Total Json Amout: %d" % len(json_paths))
-        for json_path in tqdm(json_paths):
-            with open(json_path, "r") as input_json:
-                json_obj = json.load(input_json)
-                cam_objs = json_obj["camera"]
-                for cam_obj in cam_objs:
-                    if cam_obj["name"] in viewpoints:
-                        dict_paths[cam_obj["name"]] += [Path("/" + cam_obj["oss_path"])]
-                        
-    print(dict_paths)
-    front_middle = dict_paths[viewpoints[0]]
-    for i in tqdm(range(0, len(front_middle), sampled_size)):
-        group_list = front_middle[i : i+sampled_size]
-        
-        start_time = time.time()
-                
-        encoder = initialization(method=method)
-        
-        encodings = encoder.encode_images(image_paths=group_list)
-        print(encodings)
-        
-        with open(res_dir, "w") as output_file:
-            for enc in encodings.keys():
-                output_file.writelines("%s#/%s#%s" % (carids[i], enc, list(encodings[enc])) + "\n")
-        
-        # process(encoder=encoder, method=method, image_paths=group_list)
-        
-        end_time = time.time()
-        elapsed_time = end_time - start_time
 
-        print(f"Elapsed time: {elapsed_time} seconds")
-        print(res_dir)
-        
+        if load_all: 
+            dict_paths = load_jsons(json_paths=json_paths, viewpoints=viewpoints)
+            save_to_pickle(save_path="%s/paths.pkl" % output_root, pickle_obj=dict_paths)
+            process(dict_paths[viewpoints[0]], save_root=output_root, method=method)
+        else :
+            for i in tqdm(range(0, len(json_paths), sampled_size)):
+                dict_paths_t = load_jsons(json_paths=json_paths[i: i + sampled_size], viewpoints=viewpoints)
+                process(dict_paths_t[viewpoints[0]], save_root=output_root, method=method)
+                
+    else:
+        print("Check your input")
+    # =========================================================================================
+    
+    # process_from_mid(save_root=output_root, method=method)
+    

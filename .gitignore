@@ -251,3 +251,4 @@ mkdocs/docs/index.md
 
 # ignore cpp files from cython setup
 *.cpp
+*.out
