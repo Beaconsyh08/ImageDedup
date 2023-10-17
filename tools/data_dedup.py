@@ -85,6 +85,8 @@ def load_jsons(json_paths:list, viewpoints:list):
             if cam_objs:
                 for cam_obj in cam_objs:
                     if cam_obj["name"] in viewpoints:
+                        print(cam_obj["oss_path"])
+                        print(Path(cam_obj["oss_path"]))
                         res_dict[cam_obj["name"]] += [Path("/" + cam_obj["oss_path"])]
                     
     with ThreadPool(processes = 40) as pool:
